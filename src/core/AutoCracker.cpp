@@ -62,7 +62,6 @@ bool AutoCracker::ValidateTools(std::string& outError) {
 }
 
 bool AutoCracker::IsCracked(const std::filesystem::path& gameFolder) {
-    if (std::filesystem::exists(gameFolder / "steam_appid.txt")) return true;
     try {
         for (const auto& entry : std::filesystem::recursive_directory_iterator(gameFolder)) {
             auto name = entry.path().filename().string();
