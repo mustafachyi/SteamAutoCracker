@@ -5,8 +5,6 @@
 #include <set>
 #include <vector>
 
-#pragma comment(lib, "version.lib")
-
 static bool EndsWith(std::string_view str, std::string_view suffix) {
     return str.size() >= suffix.size() && str.substr(str.size() - suffix.size()) == suffix;
 }
@@ -209,7 +207,8 @@ void AutoCracker::RunSteamless(const std::filesystem::path& exePath, const std::
     const auto slDir = std::filesystem::current_path() / "tools" / "Steamless";
     LogAction(cb, "PATCH ", exePath, base);
     
-    if (RunProcess(L"\"" + (slDir / "Steamless.CLI.exe").wstring() + L"\" \"" + exePath.wstring() + L"\"", slDir)) {
+    std::wstring cmd = L"\"" + (slDir / "Steamless.CLI.exe").wstring() + L"\" \"" + exePath.wstring() + L"\"";
+    if (RunProcess(cmd, slDir)) {
         auto unpacked = exePath; unpacked += ".unpacked.exe";
         if (std::filesystem::exists(unpacked)) {
             auto backup = exePath; backup += ".bak";
@@ -273,21 +272,22 @@ void AutoCracker::ProcessConfigFile(const std::filesystem::path& path, const Gam
     in.read(&content[0], size);
     in.close();
 
-    auto ReplaceAll = [&](std::string& s, const std::string& from, const std::string& to) {
+    auto Replace = [&](const std::string& from, const std::string& to) {
         if (from.empty()) return;
         size_t pos = 0;
-        while ((pos = s.find(from, pos)) != std::string::npos) {
-            s.replace(pos, from.length(), to);
+        while ((pos = content.find(from, pos)) != std::string::npos) {
+            content.replace(pos, from.length(), to);
             pos += to.length();
         }
     };
 
-    ReplaceAll(content, "SAC_AppID", std::to_string(info.id));
-    ReplaceAll(content, "SAC_APIVersion", apiVersion);
+    Replace("SAC_AppID", std::to_string(info.id));
+    Replace("SAC_APIVersion", apiVersion);
     
     std::string dlcBlock, noSpaceDlcBlock;
-    dlcBlock.reserve(info.dlcs.size() * 32);
-    noSpaceDlcBlock.reserve(info.dlcs.size() * 32);
+    size_t reserveSize = info.dlcs.size() * 64;
+    dlcBlock.reserve(reserveSize);
+    noSpaceDlcBlock.reserve(reserveSize);
     
     for (const auto& dlc : info.dlcs) {
         std::string idStr = std::to_string(dlc.id);
@@ -295,8 +295,8 @@ void AutoCracker::ProcessConfigFile(const std::filesystem::path& path, const Gam
         noSpaceDlcBlock += idStr + "=" + dlc.name + "\r\n";
     }
     
-    ReplaceAll(content, "SAC_DLC", dlcBlock);
-    ReplaceAll(content, "SAC_NoSpaceDLC", noSpaceDlcBlock);
+    Replace("SAC_DLC", dlcBlock);
+    Replace("SAC_NoSpaceDLC", noSpaceDlcBlock);
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (out.is_open()) out.write(content.data(), content.size());

@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-#pragma comment(lib, "winhttp.lib")
-
 class WebClient {
 public:
     static std::string Fetch(const std::wstring& host, const std::wstring& path) {
@@ -18,8 +16,6 @@ public:
         if (!hConnect) return {};
 
         std::string response;
-        response.reserve(4096);
-        
         HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
         
         if (hRequest) {
@@ -30,10 +26,11 @@ public:
                 WinHttpReceiveResponse(hRequest, nullptr)) {
                 
                 DWORD size = 0, downloaded = 0;
-                std::vector<char> buffer;
+                std::vector<char> buffer(8192);
+                response.reserve(4096);
                 
                 while (WinHttpQueryDataAvailable(hRequest, &size) && size > 0) {
-                    if (buffer.size() < size) buffer.resize(size);
+                    if (size > buffer.size()) buffer.resize(size);
                     if (WinHttpReadData(hRequest, buffer.data(), size, &downloaded)) {
                         response.append(buffer.data(), downloaded);
                     }

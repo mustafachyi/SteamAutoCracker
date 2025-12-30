@@ -19,9 +19,14 @@ set(SOURCES
 
 add_executable(SteamAutoCracker WIN32 ${SOURCES})
 
+set_target_properties(SteamAutoCracker PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
 target_link_libraries(SteamAutoCracker winhttp dwmapi comctl32 version uxtheme)
 
 add_custom_command(TARGET SteamAutoCracker POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/tools $<TARGET_FILE_DIR:SteamAutoCracker>/tools
-    COMMAND cmd /C "if /I \"$<CONFIG>\" == \"Release\" powershell -NoProfile -Command \"Get-ChildItem -LiteralPath '$<TARGET_FILE_DIR:SteamAutoCracker>' | Where-Object { $_.Name -ne '$<TARGET_FILE_NAME:SteamAutoCracker>' -and $_.Name -ne 'tools' } | Remove-Item -Recurse -Force\""
 )

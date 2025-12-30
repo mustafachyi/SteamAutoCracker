@@ -1,8 +1,6 @@
 #include "../include/ui/MainWindow.hpp"
 #include <commctrl.h>
 
-#pragma comment(lib, "comctl32.lib")
-
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     INITCOMMONCONTROLSEX icex;
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
