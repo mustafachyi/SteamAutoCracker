@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <set>
 #include <vector>
+#include <system_error>
 
 static bool EndsWith(std::string_view str, std::string_view suffix) {
     return str.size() >= suffix.size() && str.substr(str.size() - suffix.size()) == suffix;
@@ -30,7 +31,7 @@ bool AutoCracker::ValidateTools(std::string& outError) {
         return false;
     }
 
-    const std::vector<std::string> slFiles = {
+    static const std::vector<std::string> slFiles = {
         "Steamless.CLI.exe", "Steamless.CLI.exe.config",
         "Plugins/ExamplePlugin.dll", "Plugins/SharpDisasm.dll", "Plugins/Steamless.API.dll",
         "Plugins/Steamless.Unpacker.Variant10.x86.dll", "Plugins/Steamless.Unpacker.Variant20.x86.dll",
@@ -44,7 +45,7 @@ bool AutoCracker::ValidateTools(std::string& outError) {
         return false;
     }
 
-    const std::vector<std::string> emuFiles = {
+    static const std::vector<std::string> emuFiles = {
         "dlc_creamapi/config_override.ini", "dlc_creamapi/files/cream_api.ini",
         "dlc_creamapi/files/steam_api.dll", "dlc_creamapi/files/steam_api64.dll",
         "game_ali213/files/SteamConfig.ini", "game_ali213/files/steam_api.dll",
@@ -62,18 +63,30 @@ bool AutoCracker::ValidateTools(std::string& outError) {
 }
 
 bool AutoCracker::IsCracked(const std::filesystem::path& gameFolder) {
-    try {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(gameFolder)) {
+    std::error_code ec;
+    auto it = std::filesystem::recursive_directory_iterator(gameFolder, std::filesystem::directory_options::skip_permission_denied, ec);
+    if (ec) return false;
+
+    auto end = std::filesystem::recursive_directory_iterator();
+    while (it != end) {
+        try {
+            const auto& entry = *it;
             auto name = entry.path().filename().string();
             std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
             if (entry.is_regular_file()) {
                 if (name == "steam_api.dll.bak" || name == "steam_api64.dll.bak" || 
-                    name == "cream_api.ini" || name == "steamconfig.ini") return true;
+                    name == "cream_api.ini" || name == "steamconfig.ini" || 
+                    name == "valve.ini" || name == "steam_api_o.dll" || 
+                    name == "steam_api64_o.dll" || EndsWith(name, ".exe.bak")) return true;
             } else if (entry.is_directory()) {
                 if (name == "steam_settings" || name == "profile") return true;
             }
-        }
-    } catch (...) {}
+        } catch (...) {}
+        
+        it.increment(ec);
+        if (ec) break;
+    }
     return false;
 }
 
@@ -87,25 +100,36 @@ bool AutoCracker::Apply(const GameInfo& info, const Settings& settings, StatusCa
     std::vector<std::filesystem::path> dllLocations;
     std::vector<std::filesystem::path> executables;
 
-    try {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(settings.gameFolder, std::filesystem::directory_options::skip_permission_denied)) {
-            if (!entry.is_regular_file()) continue;
-            auto path = entry.path();
-            auto lowerName = path.filename().string();
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+    std::error_code ec;
+    auto it = std::filesystem::recursive_directory_iterator(settings.gameFolder, std::filesystem::directory_options::skip_permission_denied, ec);
+    
+    if (!ec) {
+        auto end = std::filesystem::recursive_directory_iterator();
+        while (it != end) {
+            try {
+                const auto& entry = *it;
+                if (entry.is_regular_file(ec)) {
+                    auto path = entry.path();
+                    auto lowerName = path.filename().string();
+                    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
 
-            if (lowerName == "steam_api.dll" || lowerName == "steam_api64.dll") {
-                LogAction(cb, "SCAN  ", path, settings.gameFolder);
-                auto parent = path.parent_path();
-                bool found = false;
-                for(const auto& loc : dllLocations) if(loc == parent) { found = true; break; }
-                if(!found) dllLocations.push_back(std::move(parent));
-            }
-            else if (settings.enableSteamless && EndsWith(lowerName, ".exe")) {
-                executables.push_back(std::move(path));
-            }
+                    if (lowerName == "steam_api.dll" || lowerName == "steam_api64.dll") {
+                        LogAction(cb, "SCAN  ", path, settings.gameFolder);
+                        auto parent = path.parent_path();
+                        bool found = false;
+                        for(const auto& loc : dllLocations) if(loc == parent) { found = true; break; }
+                        if(!found) dllLocations.push_back(std::move(parent));
+                    }
+                    else if (settings.enableSteamless && EndsWith(lowerName, ".exe")) {
+                        executables.push_back(std::move(path));
+                    }
+                }
+            } catch (...) {}
+            
+            it.increment(ec);
+            if (ec) break;
         }
-    } catch (...) {}
+    }
 
     if (settings.enableSteamless) {
         for (const auto& exe : executables) RunSteamless(exe, settings.gameFolder, cb);
@@ -125,54 +149,81 @@ bool AutoCracker::Apply(const GameInfo& info, const Settings& settings, StatusCa
 bool AutoCracker::Revert(const Settings& settings, StatusCallback cb) {
     const auto crackDir = std::filesystem::current_path() / "tools" / "sac_emu" / settings.selectedCrack;
     const auto backups = LoadBackupConfig(crackDir);
-    const std::set<std::string> artifacts = { "steam_appid.txt", "steamconfig.ini", "cream_api.ini" };
+    static const std::set<std::string> artifacts = { 
+        "steam_appid.txt", "steamconfig.ini", "cream_api.ini", 
+        "valve.ini", "steam_interfaces.txt", "ch_api.ini" 
+    };
     
     std::vector<std::filesystem::path> toDelete;
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> toRestore;
 
     if (cb) cb("Analyzing file system...");
 
-    try {
-        for (auto it = std::filesystem::recursive_directory_iterator(settings.gameFolder, std::filesystem::directory_options::skip_permission_denied); 
-             it != std::filesystem::recursive_directory_iterator(); ++it) {
-            
-            auto lowerName = it->path().filename().string();
+    std::error_code ec;
+    auto it = std::filesystem::recursive_directory_iterator(settings.gameFolder, std::filesystem::directory_options::skip_permission_denied, ec);
+    
+    if (ec) {
+        if (cb) cb("Failed to access directory.");
+        return false;
+    }
+
+    auto end = std::filesystem::recursive_directory_iterator();
+
+    while (it != end) {
+        try {
+            const auto& entry = *it;
+            auto path = entry.path();
+            auto lowerName = path.filename().string();
             std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
 
-            if (it->is_directory()) {
+            if (entry.is_directory()) {
                 if (lowerName == "steam_settings" || lowerName == "profile") {
-                    toDelete.push_back(it->path());
+                    toDelete.push_back(path);
                     it.disable_recursion_pending();
                 }
-            } else {
-                if (artifacts.count(lowerName)) toDelete.push_back(it->path());
-                else if (lowerName == "steam_api.dll.bak" || lowerName == "steam_api64.dll.bak" || 
-                         lowerName == backups.x86 || lowerName == backups.x64 || EndsWith(lowerName, ".exe.bak")) {
-                    
-                    auto bak = it->path();
-                    auto orig = bak;
+            } else if (entry.is_regular_file()) {
+                if (artifacts.count(lowerName)) {
+                    toDelete.push_back(path);
+                } 
+                else if (EndsWith(lowerName, ".exe.bak")) {
+                    auto orig = path;
                     orig.replace_extension("");
-                    if (bak.extension() == ".bak" && orig.extension() != ".dll" && !EndsWith(lowerName, ".exe.bak")) {
-                         orig = bak.parent_path() / bak.stem(); 
+                    toRestore.push_back({path, orig});
+                }
+                else {
+                    std::string targetDll = "";
+                    if (lowerName == "steam_api.dll.bak" || lowerName == "steam_api_o.dll" || 
+                        lowerName == "org_steam_api.dll" || lowerName == backups.x86) {
+                        targetDll = "steam_api.dll";
                     }
-                    if (lowerName == backups.x86) orig = bak.parent_path() / "steam_api.dll";
-                    else if (lowerName == backups.x64) orig = bak.parent_path() / "steam_api64.dll";
+                    else if (lowerName == "steam_api64.dll.bak" || lowerName == "steam_api64_o.dll" || 
+                             lowerName == "org_steam_api64.dll" || lowerName == backups.x64) {
+                        targetDll = "steam_api64.dll";
+                    }
 
-                    toRestore.push_back({std::move(bak), std::move(orig)});
+                    if (!targetDll.empty()) {
+                        toRestore.push_back({path, path.parent_path() / targetDll});
+                    }
                 }
             }
-        }
+        } catch (...) {}
+        
+        it.increment(ec);
+        if (ec) break;
+    }
 
-        for (const auto& p : toDelete) {
-            LogAction(cb, "CLEAN ", p, settings.gameFolder);
-            std::filesystem::remove_all(p);
-        }
-        for (const auto& [bak, orig] : toRestore) {
-            LogAction(cb, "REVERT", orig, settings.gameFolder);
-            if (std::filesystem::exists(orig)) std::filesystem::remove(orig);
-            std::filesystem::rename(bak, orig);
-        }
-    } catch (...) { return false; }
+    for (const auto& p : toDelete) {
+        LogAction(cb, "CLEAN ", p, settings.gameFolder);
+        std::error_code delEc;
+        std::filesystem::remove_all(p, delEc);
+    }
+
+    for (const auto& [bak, orig] : toRestore) {
+        LogAction(cb, "REVERT", orig, settings.gameFolder);
+        std::error_code resEc;
+        if (std::filesystem::exists(orig, resEc)) std::filesystem::remove(orig, resEc);
+        std::filesystem::rename(bak, orig, resEc);
+    }
 
     if (cb) cb("Reverted.");
     return true;
@@ -231,27 +282,28 @@ void AutoCracker::ApplyEmulator(const std::filesystem::path& targetDir, const Ga
         for (const auto& entry : std::filesystem::recursive_directory_iterator(emuSource)) {
             auto relPath = std::filesystem::relative(entry.path(), emuSource);
             auto destPath = targetDir / relPath;
+            std::error_code ec;
             
-            if (entry.is_directory()) {
-                std::filesystem::create_directories(destPath);
+            if (entry.is_directory(ec)) {
+                std::filesystem::create_directories(destPath, ec);
             } else {
                 auto lowerName = entry.path().filename().string();
                 std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
                 
-                if (std::filesystem::exists(destPath)) {
+                if (std::filesystem::exists(destPath, ec)) {
                     std::filesystem::path bak;
                     if (lowerName == "steam_api.dll") bak = destPath.parent_path() / backups.x86;
                     else if (lowerName == "steam_api64.dll") bak = destPath.parent_path() / backups.x64;
                     
                     if (!bak.empty()) {
                         LogAction(cb, "BACKUP", bak, base);
-                        if (!std::filesystem::exists(bak)) std::filesystem::rename(destPath, bak);
-                        else std::filesystem::remove(destPath);
+                        if (!std::filesystem::exists(bak, ec)) std::filesystem::rename(destPath, bak, ec);
+                        else std::filesystem::remove(destPath, ec);
                     }
                 }
                 
                 LogAction(cb, EndsWith(lowerName, ".txt") || EndsWith(lowerName, ".ini") ? "CONFIG" : "WRITE ", destPath, base);
-                std::filesystem::copy_file(entry.path(), destPath, std::filesystem::copy_options::overwrite_existing);
+                std::filesystem::copy_file(entry.path(), destPath, std::filesystem::copy_options::overwrite_existing, ec);
                 
                 if (EndsWith(lowerName, ".txt") || EndsWith(lowerName, ".ini") || EndsWith(lowerName, ".cfg")) {
                     ProcessConfigFile(destPath, info, apiVersion);
