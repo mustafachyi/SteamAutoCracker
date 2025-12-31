@@ -7,7 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_definitions(-DUNICODE -D_UNICODE)
 
 include_directories(include)
-include_directories(external)
 
 set(SOURCES
     src/main.cpp

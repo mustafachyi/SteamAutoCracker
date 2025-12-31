@@ -492,10 +492,17 @@ LRESULT CALLBACK MainWindow::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
 
 LRESULT CALLBACK MainWindow::EditSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
     if (uMsg == WM_KEYDOWN && wParam == VK_RETURN) {
-        if (IsWindowEnabled(GetDlgItem(GetParent(hwnd), SAC_UI::IDC_BTN_SEARCH))) SendMessageW(GetParent(hwnd), WM_COMMAND, SAC_UI::IDC_BTN_SEARCH, 0);
+        if (IsWindowEnabled(GetDlgItem(GetParent(hwnd), SAC_UI::IDC_BTN_SEARCH))) 
+            SendMessageW(GetParent(hwnd), WM_COMMAND, SAC_UI::IDC_BTN_SEARCH, 0);
         return 0;
     }
-    if (uMsg == WM_CHAR && wParam == VK_RETURN) return 0;
+    if (uMsg == WM_CHAR) {
+        if (wParam == VK_RETURN) return 0;
+        if (wParam == 1) {
+            SendMessageW(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+    }
     return DefSubclassProc(hwnd, uMsg, wParam, lParam);
 }
 
