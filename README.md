@@ -74,7 +74,6 @@ tools/
 *   **Inspiration & Emulators**: This project was inspired by the Python version created by [BigBoiCJ](https://github.com/BigBoiCJ/SteamAutoCracker). The emulator files included in this tool were taken from that repository.
 *   **API**: Game data is fetched using a custom API built specifically for this tool: [mustafachyi/steam](https://github.com/mustafachyi/steam).
 *   **Libraries**: 
-    *   [nlohmann/json](https://github.com/nlohmann/json) for reading data.
     *   [Steamless](https://github.com/atom0s/Steamless) for unpacking files.
 
 ## Disclaimer
