@@ -19,7 +19,7 @@ public:
         wchar_t buf[2048];
         std::filesystem::path path = std::filesystem::current_path() / "config.ini";
         
-        GetPrivateProfileStringW(L"Settings", L"ApiUrl", L"steam.selfhoster.nl", buf, 2048, path.c_str());
+        GetPrivateProfileStringW(L"Settings", L"ApiUrl", L"steam.selfhoster.win", buf, 2048, path.c_str());
         std::wstring rawUrl = buf;
         
         const std::wstring proto = L"://";
